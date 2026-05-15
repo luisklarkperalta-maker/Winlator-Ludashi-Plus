@@ -2,9 +2,9 @@ name: Android CI Bionic
 
 on:
   push:
-    branches: [ "ludashi-3.0" ]
+    branches:
   pull_request:
-    branches: [ "ludashi-3.0" ]
+    branches:
 
 permissions:
   contents: read
