@@ -23,6 +23,38 @@ PFN_vkDestroyInstance destroyInstance;
 
 static void *vulkan_handle = NULL;
 
+static void preload_first_existing(const char **candidates) {
+    for (int i = 0; candidates[i]; i++) {
+        void *handle = dlopen(candidates[i], RTLD_GLOBAL | RTLD_NOW);
+
+        if (handle) {
+            printf("Preloaded Vulkan dependency: %s", candidates[i]);
+            break;
+        }
+    }
+}
+
+static void preload_vendor_icd_deps() {
+    // Keep OEM Vulkan ICD dependencies globally visible before the loader pulls
+    // them in, or DXVK can misreport missing VK_KHR_surface.
+
+    const char *jpeg_candidates[] = {
+        "/system/lib64/libjpeg.so",
+        "/system_ext/lib64/libjpeg.so",
+        "libjpeg.so",
+        NULL,
+    };
+
+    const char *crypto_candidates[] = {
+        "/system/lib64/libcrypto.so",
+        "/system_ext/lib64/libcrypto.so",
+        "libcrypto.so",
+        NULL,
+    };
+
+    preload_first_existing(jpeg_candidates);
+    preload_first_existing(crypto_candidates);
+}
 
 static char *get_native_library_dir(JNIEnv *env, jobject context) {
     char *native_libdir;
@@ -79,6 +111,7 @@ static char *get_library_name(JNIEnv *env, jobject context, const char *driver_n
 }
 
 static void init_original_vulkan() {
+    preload_vendor_icd_deps();
     vulkan_handle = dlopen("/system/lib64/libvulkan.so", RTLD_LOCAL | RTLD_NOW);
 }
 
@@ -96,7 +129,18 @@ static void init_vulkan(JNIEnv  *env, jobject context, const char *driver_name) 
         mkdir(tmpdir, S_IRWXU | S_IRWXG);
     }
 
-    vulkan_handle = adrenotools_open_libvulkan(RTLD_LOCAL | RTLD_NOW, ADRENOTOOLS_DRIVER_CUSTOM, tmpdir, native_library_dir, driver_path, library_name, NULL, NULL);
+    preload_vendor_icd_deps();
+
+    vulkan_handle = adrenotools_open_libvulkan(
+        RTLD_LOCAL | RTLD_NOW,
+        ADRENOTOOLS_DRIVER_CUSTOM,
+        tmpdir,
+        native_library_dir,
+        driver_path,
+        library_name,
+        NULL,
+        NULL
+    );
 }
 
 static VkResult create_instance(jstring driverName, JNIEnv *env, jobject context) {
